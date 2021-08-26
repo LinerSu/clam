@@ -186,7 +186,7 @@ public:
   // where p_offset indicates the offset of element pointer
   // the p_size means the total size of allcation
   // the element ptr should refere the same size as the original one
-  void visitAfterGep(llvm::Instruction &I, CrabGepRefOps &s) {
+    void visitAfterGep(llvm::Instruction &I, CrabGepRefOps &s) {
     if (!isa<PHINode>(I) && !isa<BitCastInst>(I) &&
         !isa<GetElementPtrInst>(I)) {
       return;
@@ -197,20 +197,34 @@ public:
              llvm::errs() << "Gep: add two extra variable for " << I << "\n");
     Value *vlhs = llvm::cast<llvm::Value>(&I);
     Value *vptr = I.getOperand(0);
-    auto it = m_ref_bnd_map->find(vptr);
-    if (it == m_ref_bnd_map->end()) {
-      CLAM_WARNING("Could not find gep ptr " << *vptr << " from reference map"
-                                             << I);
-    } else {
-      var_t ptr_obj_sz = it->second.first;
-      var_t ptr_offset = it->second.second;
+    if (isa<ConstantPointerNull>(*vptr)) { // Get a constant null ptr
+      Type *elemTy = vptr->getType()->getPointerElementType();
+      const llvm::DataLayout *dl = getInsDatalayout(I);
+      unsigned width = dl->getTypeSizeInBits(elemTy);
       var_t lhs_obj_sz =
-          m_lfac.mkIntVar(ptr_obj_sz.get_type().get_integer_bitwidth());
+          m_lfac.mkIntVar(width);
       var_t lhs_offset =
-          m_lfac.mkIntVar(ptr_offset.get_type().get_integer_bitwidth());
-      bb.assign(lhs_obj_sz, ptr_obj_sz);
-      bb.assign(lhs_offset, offset);
+          m_lfac.mkIntVar(width);
+      bb.assign(lhs_obj_sz, number_t(0));
+      bb.assign(lhs_offset, number_t(0));
       m_ref_bnd_map->insert({&I, {lhs_obj_sz, lhs_offset}});
+    }
+    else {
+      auto it = m_ref_bnd_map->find(vptr);
+      if (it == m_ref_bnd_map->end()) {
+        CLAM_WARNING("Could not find gep ptr "
+                  << *vptr << " from reference map" << I);
+      } else {
+        var_t ptr_obj_sz = it->second.first;
+        var_t ptr_offset = it->second.second;
+        var_t lhs_obj_sz =
+            m_lfac.mkIntVar(ptr_obj_sz.get_type().get_integer_bitwidth());
+        var_t lhs_offset =
+            m_lfac.mkIntVar(ptr_offset.get_type().get_integer_bitwidth());
+        bb.assign(lhs_obj_sz, ptr_obj_sz);
+        bb.assign(lhs_offset, offset);
+        m_ref_bnd_map->insert({&I, {lhs_obj_sz, lhs_offset}});
+      }
     }
   }
 
