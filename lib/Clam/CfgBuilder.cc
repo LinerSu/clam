@@ -1049,18 +1049,7 @@ var_t CrabIntraBlockBuilder::getUnconstrainedArrayIdxVar(
 
 unsigned
 CrabIntraBlockBuilder::getMaxBitWidthFromGepIndexes(GetElementPtrInst &I) {
-  unsigned bitwidth = 0;
-  for (unsigned i = 1, e = I.getNumOperands(); i < e; ++i) {
-    if (IntegerType *ITy = cast<IntegerType>(I.getOperand(i)->getType())) {
-      bitwidth = std::max(bitwidth, ITy->getBitWidth());
-    } else {
-      CLAM_ERROR("Expected gep instruction only with integer indexes: " << I);
-    }
-  }
-  if (bitwidth == 0) {
-    CLAM_ERROR("Unexpected gep instruction without indexes: " << I);
-  }
-  return bitwidth;
+  return m_dl->getMaxPointerSizeInBits();
 }
 
 Optional<z_number> CrabIntraBlockBuilder::evalOffset(Value &v,

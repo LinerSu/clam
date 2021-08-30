@@ -27,7 +27,6 @@ class EmitBndChecksImpl {
   using ref_bnd_map_t = llvm::DenseMap<llvm::Value *, std::pair<var_t, var_t>>;
   // map llvm pointer to pair of object size and offset
   ref_bnd_map_t m_ref_bnd_map;
-  const unsigned m_width = 64; // Fixed width for vars of size and offset
 
   // Private function here:
   // Get datalayout by given an instruction
@@ -37,6 +36,14 @@ class EmitBndChecksImpl {
       m_dl = &m.getDataLayout();
     }
     return m_dl;
+  }
+
+  // Get maximum width in bits through datalayout
+  const unsigned getMaxWidthInBits(Instruction &I) {
+    if (!m_dl) {
+      m_dl = getInsDatalayout(I);
+    }
+    return m_dl->getMaxPointerSizeInBits();
   }
 
   // Add bound check assertions with the following pattern:
@@ -109,11 +116,11 @@ public:
     crab_lit_ref_t lhs = m_lfac.getLit(I);
     basic_block_t &bb = s.getBasicBlock();
     if (lhs->getVar().get_type().is_reference()) {
-      var_t ref_obj_sz = m_lfac.mkIntVar(m_width);
+      var_t ref_obj_sz = m_lfac.mkIntVar(getMaxWidthInBits(I));
       // obtain an overappriximation of deref
       // using havoc to initialize size and offset
       bb.havoc(ref_obj_sz, "approx size when loading a ptr of ptr");
-      var_t ref_offset = m_lfac.mkIntVar(m_width);
+      var_t ref_offset = m_lfac.mkIntVar(getMaxWidthInBits(I));
       bb.havoc(ref_offset, "approx offset when loading a ptr of ptr");
 
       // add pair to the map by llvm pointer
@@ -159,11 +166,14 @@ public:
     } else {
       bb.assign(tmp_obj_sz, m_lfac.getExp(opd));
     }
-    var_t ref_obj_sz = m_lfac.mkIntVar(m_width);
-    if (m_width != width) // convert assigned size to fixed width 64
+    var_t ref_obj_sz = m_lfac.mkIntVar(getMaxWidthInBits(I));
+    // convert assigned size to maximum width
+    if (getMaxWidthInBits(I) > width)
       bb.zext(tmp_obj_sz, ref_obj_sz);
+    else if (getMaxWidthInBits(I) < width)
+      bb.truncate(tmp_obj_sz, ref_obj_sz);
     // create a var_t for offset and assign it to zero
-    var_t ref_offset = m_lfac.mkIntVar(width);
+    var_t ref_offset = m_lfac.mkIntVar(getMaxWidthInBits(I));
     bb.assign(ref_offset, number_t(0));
 
     // add pair to the map by llvm pointer
@@ -190,11 +200,10 @@ public:
              llvm::errs() << "Gep: add two extra variable for " << I << "\n");
     Value *vlhs = llvm::cast<llvm::Value>(&I);
     Value *vptr = I.getOperand(0);
+    unsigned width = getMaxWidthInBits(I);
     if (isa<ConstantPointerNull>(*vptr)) { // Get a constant null ptr
-      Type *elemTy = vptr->getType()->getPointerElementType();
-      const llvm::DataLayout *dl = getInsDatalayout(I);
-      var_t lhs_obj_sz = m_lfac.mkIntVar(m_width);
-      var_t lhs_offset = m_lfac.mkIntVar(m_width);
+      var_t lhs_obj_sz = m_lfac.mkIntVar(width);
+      var_t lhs_offset = m_lfac.mkIntVar(width);
       bb.assign(lhs_obj_sz, number_t(0));
       bb.assign(lhs_offset, number_t(0));
       m_ref_bnd_map.insert({&I, {lhs_obj_sz, lhs_offset}});
@@ -207,8 +216,8 @@ public:
       } else {
         var_t ptr_obj_sz = it->second.first;
         var_t ptr_offset = it->second.second;
-        var_t lhs_obj_sz = m_lfac.mkIntVar(m_width);
-        var_t lhs_offset = m_lfac.mkIntVar(m_width);
+        var_t lhs_obj_sz = m_lfac.mkIntVar(width);
+        var_t lhs_offset = m_lfac.mkIntVar(width);
         bb.assign(lhs_obj_sz, ptr_obj_sz);
         bb.assign(lhs_offset, offset);
         m_ref_bnd_map.insert({&I, {lhs_obj_sz, lhs_offset}});
@@ -227,14 +236,13 @@ public:
     crab_lit_ref_t op2 = m_lfac.getLit(vfalse);
     assert(op2);
     basic_block_t &bb = s.getBasicBlock();
-    Type *elemTy = vtrue.getType()->getPointerElementType();
-    const llvm::DataLayout *dl = getInsDatalayout(I);
-    var_t cond = m_lfac.mkIntVar(m_width);
+    unsigned width = getMaxWidthInBits(I);
+    var_t cond = m_lfac.mkIntVar(width);
     bb.zext(c->getVar(), cond); // extend bool into int
-    var_t offset_op1 = m_lfac.mkIntVar(m_width);
-    var_t size_op1 = m_lfac.mkIntVar(m_width);
-    var_t offset_op2 = m_lfac.mkIntVar(m_width);
-    var_t size_op2 = m_lfac.mkIntVar(m_width);
+    var_t offset_op1 = m_lfac.mkIntVar(width);
+    var_t size_op1 = m_lfac.mkIntVar(width);
+    var_t offset_op2 = m_lfac.mkIntVar(width);
+    var_t size_op2 = m_lfac.mkIntVar(width);
     if (m_lfac.isRefNull(op1)) {
       bb.assign(offset_op1, number_t(0));
       bb.assign(size_op1, number_t(0));
@@ -263,8 +271,8 @@ public:
         offset_op2 = it->second.second;
       }
     }
-    var_t lhs_obj_sz = m_lfac.mkIntVar(m_width);
-    var_t lhs_offset = m_lfac.mkIntVar(m_width);
+    var_t lhs_obj_sz = m_lfac.mkIntVar(width);
+    var_t lhs_offset = m_lfac.mkIntVar(width);
     bb.select(lhs_offset, cond, offset_op1, offset_op2);
     bb.select(lhs_obj_sz, cond, size_op1, size_op2);
     m_ref_bnd_map.insert({&I, {lhs_obj_sz, lhs_offset}});
