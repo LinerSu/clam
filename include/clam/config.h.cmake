@@ -16,7 +16,5 @@
 /** whether Clam is compiled as a standalone application **/
 #cmakedefine CLAM_IS_TOPLEVEL ${CLAM_IS_TOPLEVEL}
 
-
-
-
-
+/** whether domain is object domain or not **/
+#cmakedefine HAS_OBJECT_DOMAIN ${HAS_OBJECT_DOMAIN}

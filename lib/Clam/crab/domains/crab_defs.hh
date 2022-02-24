@@ -12,7 +12,11 @@
 
 #include <crab/domains/array_adaptive.hpp>
 #include <crab/domains/flat_boolean_domain.hpp>
+#ifdef HAS_OBJECT_DOMAIN
+#include <crab/domains/object_domain.hpp>
+#else
 #include <crab/domains/region_domain.hpp>
+#endif
 #include <crab/domains/term_equiv.hpp>
 
 namespace clam {
@@ -37,7 +41,11 @@ using str_varname_t = str_var_allocator::varname_t;
 // Array functor domain where the parameter domain is DOM
 #define ARRAY_FUN(DOM) array_adapt_domain<DOM>
 // Region functor domain -- the root of the hierarchy of domains.
+#ifdef HAS_OBJECT_DOMAIN
+#define RGN_FUN(DOM) object_domain<ObjectParams<DOM>>
+#else
 #define RGN_FUN(DOM) region_domain<RegionParams<DOM>>
+#endif
 /* ====================================================================== */    
 /* END MACROS to create the hierarchy of domains. Only for internal use   */
 /* ====================================================================== */    
@@ -65,6 +73,18 @@ using array_adapt_domain = array_adaptive_domain<Dom>;
 /* ====================================================================== */
 //using region_subdom_varname_t = str_varname_t;
 using region_subdom_varname_t = clam::varname_t;  
+#ifdef HAS_OBJECT_DOMAIN
+using region_dom_varname_t = clam::varname_t;
+template<class BaseAbsDom>
+class ObjectParams {
+public:
+  using number_t = clam::number_t;
+  using varname_t = clam::varname_t;
+  using varname_allocator_t = str_var_allocator;
+  using base_abstract_domain_t = BaseAbsDom;
+  using field_abstract_domain_t = BaseAbsDom;
+};
+#else
 template<class BaseAbsDom>
 class RegionParams {
 public:
@@ -77,7 +97,7 @@ public:
   static_assert(std::is_same<region_subdom_varname_t, base_varname_t>::value,
 		"Region subdomain has a wrong varname type");
 };
-
+#endif
 /* ====================================================================== */    
 /* END region domain                                                      */
 /* ====================================================================== */
