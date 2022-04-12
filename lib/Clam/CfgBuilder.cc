@@ -5467,17 +5467,16 @@ void CrabIntraBlockBuilder::doCallInst(CallInst &I) {
 #define UNFREED_OR_NULL "unfreed_or_null"
 #define ADD_TAG "add_tag"
 #define CHECK_DOES_NOT_HAVE_TAG "check_does_not_have_tag"
+#define DO_REDUCTION "do_reduction"
 
 bool CrabIntraBlockBuilder::isSpecialCrabIntrinsic(const Function &calleeF) const {
   if (!isCrabIntrinsic(calleeF)) {
     return false;
   }
   std::string name = getCrabIntrinsicName(calleeF);
-  return (name == IS_DEREFERENCEABLE || 
-	  name == IS_UNFREED_OR_NULL ||
-	  name == UNFREED_OR_NULL ||
-	  name == ADD_TAG ||
-	  name == CHECK_DOES_NOT_HAVE_TAG);
+  return (name == IS_DEREFERENCEABLE || name == IS_UNFREED_OR_NULL ||
+          name == UNFREED_OR_NULL || name == ADD_TAG ||
+          name == CHECK_DOES_NOT_HAVE_TAG || name == DO_REDUCTION);
 }
   
 void CrabIntraBlockBuilder::doCrabSpecialIntrinsic(CallInst &I) {
@@ -5667,6 +5666,30 @@ void CrabIntraBlockBuilder::doCrabSpecialIntrinsic(CallInst &I) {
       m_bb.intrinsic("does_not_have_tag", outputs, inputs, getDebugLoc(&I, 0 /*no id*/));
     }
     m_bb.bool_assert(outParam, getDebugLoc(&I, m_dbg_id++));
+  } else if (name == DO_REDUCTION) {
+    if (CS.arg_size() != 2) {
+      CLAM_ERROR("unexpected number of parameters in special intrinsic " << I);
+    }
+    if (!Ptr->getType()->isPointerTy() ||
+        !CS.getArgument(1)->getType()->isIntegerTy()) {
+      CLAM_ERROR("unexpected parameters in special intrinsic " << I);
+    }
+    crab_lit_ref_t refParamLit = m_lfac.getLit(*Ptr);
+    crab_lit_ref_t directionParamLit = m_lfac.getLit(*(CS.getArgument(1)));
+    if (!directionParamLit->isBool()) {
+      CLAM_ERROR("unexpected 2nd input argument in special intrinsic " << I);
+    }
+    number_t direction(m_lfac.isBoolTrue(directionParamLit) ? number_t(1)
+                                                            : number_t(0));
+    Region rgn = getRegion(m_mem, m_func_regions, m_params, I, *Ptr);
+    if (!getSingletonValue(rgn, m_params.lower_singleton_aliases)) {
+      var_t rgnVar = m_lfac.mkRegionVar(rgn);
+      std::vector<var_or_cst_t> inputs{
+          rgnVar, refParamLit->getVar(),
+          var_or_cst_t(direction, crab::variable_type(BOOL_TYPE))};
+      std::vector<var_t> outputs;
+      m_bb.intrinsic(name, outputs, inputs);
+    }
   } else {
     CLAM_ERROR("unsupported intrinsic " << I);
   }
