@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-// RUN: %clam -O0 --inline --crab-dom=zones --crab-track=mem --crab-heap-analysis=cs-sea-dsa-types --crab-lower-unsigned-icmp --crab-check=assert --crab-sanity-checks "%s" 2>&1 | OutputCheck %s
+// RUN: %clam -O0 --inline --crab-dom=zones --crab-dom-param="region.is_dereferenceable=true" --crab-track=mem --crab-heap-analysis=cs-sea-dsa-types --crab-lower-unsigned-icmp --crab-check=assert --crab-sanity-checks "%s" 2>&1 | OutputCheck %s
 // CHECK: ^1  Number of total safe checks$
 // CHECK: ^0  Number of total warning checks$
 
@@ -51,7 +51,10 @@ int main(void) {
   struct aws_byte_buf *buf = bool_nd() ? b1 : b2;
   size_t len = buf->length;
   size_t cap = buf->capacity;
+  uint8_t *buffer = buf->buffer;
   __CRAB_assert(len <= cap);
+  __CRAB_assert(sea_is_dereferenceable(buffer, len));
+  __CRAB_assert(sea_is_dereferenceable(buffer, cap));
   
   return 0;
 }
