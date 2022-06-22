@@ -340,6 +340,12 @@ else()
 endif()
 
 #---------------------------------------#
+option(CLAM_USE_OBJECT_DOM OFF)
+
+if(CLAM_USE_OBJECT_DOM AND EXISTS ${CRAB_ROOT}/include/crab/domains/object_domain.hpp)
+  set(HAS_OBJECT_DOMAIN TRUE)
+  message(STATUS "Crab: use object domain (for testing)")
+endif()
 
 include_directories(BEFORE ${Clam_SOURCE_DIR}/include)
 include_directories (BEFORE ${CMAKE_BINARY_DIR}/include)
