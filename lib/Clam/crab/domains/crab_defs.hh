@@ -18,6 +18,10 @@
 #include <crab/domains/region_domain.hpp>
 #endif
 #include <crab/domains/term_equiv.hpp>
+#ifdef HAS_VAR_PACK_TVPI_DOM
+#include <crab/domains/numerical_packing.hpp>
+#include <crab/domains/fixed_tvpi_domain.hpp>
+#endif
 
 namespace clam {
 using namespace crab::domains;
@@ -45,6 +49,11 @@ using str_varname_t = str_var_allocator::varname_t;
 #define RGN_FUN(DOM) object_domain<ObjectParams<DOM>>
 #else
 #define RGN_FUN(DOM) region_domain<RegionParams<DOM>>
+#endif
+#ifdef HAS_VAR_PACK_TVPI_DOM
+#define VAR_TVPI_FUN(DOM) numerical_packing_domain<fixed_tvpi_domain<DOM>>
+#else
+#define VAR_TVPI_FUN(DOM) DOM
 #endif
 /* ====================================================================== */    
 /* END MACROS to create the hierarchy of domains. Only for internal use   */

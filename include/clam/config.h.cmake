@@ -18,3 +18,6 @@
 
 /** whether Crab has object domain **/
 #cmakedefine HAS_OBJECT_DOMAIN ${HAS_OBJECT_DOMAIN}
+
+/** whether Crab has var pack + fixed tvpi domain **/
+#cmakedefine HAS_VAR_PACK_TVPI_DOM ${HAS_VAR_PACK_TVPI_DOM}

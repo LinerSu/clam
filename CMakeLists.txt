@@ -341,10 +341,16 @@ endif()
 
 #---------------------------------------#
 option(CLAM_USE_OBJECT_DOM OFF)
+option(CLAM_USE_DBM_VAR_TVPI OFF)
 
 if(CLAM_USE_OBJECT_DOM AND EXISTS ${CRAB_ROOT}/include/crab/domains/object_domain.hpp)
   set(HAS_OBJECT_DOMAIN TRUE)
   message(STATUS "Crab: use object domain (for testing)")
+endif()
+
+if (CLAM_USE_DBM_VAR_TVPI AND EXISTS ${CRAB_ROOT}/include/crab/domains/numerical_packing.hpp)
+  set(HAS_VAR_PACK_TVPI_DOM TRUE)
+  message(STATUS "Crab: use var pack + fixed tvpi (for testing)")
 endif()
 
 include_directories(BEFORE ${Clam_SOURCE_DIR}/include)
