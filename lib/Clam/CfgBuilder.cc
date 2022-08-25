@@ -2470,6 +2470,7 @@ void CrabIntraBlockBuilder::doAllocFn(CallInst &I) {
       havoc(retRef->getVar(), valueToStr(I), m_bb, m_params.include_useless_havoc);
     }
   }
+  #endif
 }
 
 void CrabIntraBlockBuilder::visitAllocaInst(AllocaInst &I) {
