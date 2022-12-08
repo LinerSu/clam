@@ -2470,7 +2470,6 @@ void CrabIntraBlockBuilder::doAllocFn(CallInst &I) {
       havoc(retRef->getVar(), valueToStr(I), m_bb, m_params.include_useless_havoc);
     }
   }
-  #endif
 }
 
 void CrabIntraBlockBuilder::visitAllocaInst(AllocaInst &I) {
@@ -4632,8 +4631,12 @@ void CfgBuilderImpl::addFunctionDeclaration() {
   // entry block.
   std::unique_ptr<basic_block_t> tmp_bb1 = makeTempBlock();
   std::unique_ptr<basic_block_t> tmp_bb2 = makeTempBlock();
-  std::unique_ptr<basic_block_t> tmp_bb3 = makeTempBlock();    
-  
+  std::unique_ptr<basic_block_t> tmp_bb3 = makeTempBlock();
+  std::unique_ptr<basic_block_t> tmp_ret = makeTempBlock();
+
+  // An instrinsic to track regions return back to caller
+  std::vector<var_or_cst_t> ret_mem_obj_intrinsicIns;
+
   // -- add input parameters i1,...,in
   for (Value &arg : llvm::make_range(m_func.arg_begin(), m_func.arg_end())) {
     if (!isTracked(arg, m_params))
@@ -4737,6 +4740,7 @@ void CfgBuilderImpl::addFunctionDeclaration() {
         inputs.push_back(rgn_in);
         // output version
         outputs.push_back(m_lfac.mkRegionVar(rgn));
+        ret_mem_obj_intrinsicIns.push_back(m_lfac.mkRegionVar(rgn));
       }
     }
 
@@ -4746,6 +4750,7 @@ void CfgBuilderImpl::addFunctionDeclaration() {
         outputs.push_back(m_lfac.mkArrayVar(rgn));
       } else if (m_params.trackMemory()) {
         outputs.push_back(m_lfac.mkRegionVar(rgn));
+        ret_mem_obj_intrinsicIns.push_back(m_lfac.mkRegionVar(rgn));
       }
     }
   }
@@ -4787,7 +4792,18 @@ void CfgBuilderImpl::addFunctionDeclaration() {
   tmp_bb1->copy_back(*tmp_bb3);
   basic_block_t &entry = m_cfg->get_node(m_cfg->entry());
   entry.copy_front(*tmp_bb1);
-  
+
+  if (!m_func.getName().equals("main") && ret_mem_obj_intrinsicIns.size() > 1 &&
+      m_cfg->has_exit()) {
+    basic_block_t &exit = m_cfg->get_node(m_cfg->exit());
+    if (m_ret_insts) {
+      m_ret_insts->intrinsic("commit_cache", {}, ret_mem_obj_intrinsicIns);
+    } else {
+      tmp_ret->intrinsic("commit_cache", {}, ret_mem_obj_intrinsicIns);
+      m_ret_insts = tmp_ret.release();
+    }
+  }
+
   // -- Finally, we add the function declaration
 
   // Sanity check
@@ -5436,6 +5452,16 @@ void CrabIntraBlockBuilder::doCallInst(CallInst &I) {
 			 
       }
     }
+    // Before the callsite, commit cache
+    std::vector<var_or_cst_t> pass_mem_obj_intrinsicIns;
+    for (auto i : inputs) {
+      if (i.get_type().is_region()) {
+        pass_mem_obj_intrinsicIns.push_back(i);
+      }
+    }
+    if (pass_mem_obj_intrinsicIns.size() > 1) {
+      m_bb.intrinsic("commit_cache", {}, pass_mem_obj_intrinsicIns);
+    }
 
     m_bb.callsite(calleeF->getName().str(), outputs, inputs);
 
@@ -5667,15 +5693,15 @@ void CrabIntraBlockBuilder::doCrabSpecialIntrinsic(CallInst &I) {
     }
     m_bb.bool_assert(outParam, getDebugLoc(&I, m_dbg_id++));
   } else if (name == DO_REDUCTION) {
-    if (CS.arg_size() != 2) {
+    if (CB.arg_size() != 2) {
       CLAM_ERROR("unexpected number of parameters in special intrinsic " << I);
     }
     if (!Ptr->getType()->isPointerTy() ||
-        !CS.getArgument(1)->getType()->isIntegerTy()) {
+        !CB.getArgOperand(1)->getType()->isIntegerTy()) {
       CLAM_ERROR("unexpected parameters in special intrinsic " << I);
     }
     crab_lit_ref_t refParamLit = m_lfac.getLit(*Ptr);
-    crab_lit_ref_t directionParamLit = m_lfac.getLit(*(CS.getArgument(1)));
+    crab_lit_ref_t directionParamLit = m_lfac.getLit(*(CB.getArgOperand(1)));
     if (!directionParamLit->isBool()) {
       CLAM_ERROR("unexpected 2nd input argument in special intrinsic " << I);
     }
