@@ -4510,6 +4510,12 @@ void CfgBuilderImpl::addFunctionDeclaration() {
   llvm::Optional<var_t> retVal;
   std::vector<var_t> inputs, outputs;
 
+
+  // An map to track input region var
+  // The DSA region differs from the region in crab IR
+  // A dsa region might be represented by one or two region vars in IR
+  std::unordered_map<Region, var_t, RegionHashFunction> region_input_map;
+
   // 
   // Perform the following translation required by the Crab
   // inter-procedural analysis:
@@ -4570,9 +4576,10 @@ void CfgBuilderImpl::addFunctionDeclaration() {
      bb.array_assign(m_lfac.mkArrayVar(inputRgn), inputPrime);
      inputs.push_back(inputPrime);
   };
-  auto translateInputRegionAsRegion = [this,&inputs](const Region &inputRgn, basic_block_t &bb) {
+  auto translateInputRegionAsRegion = [this,&inputs,&region_input_map](const Region &inputRgn, basic_block_t &bb) {
      var_t inputPrime = m_lfac.mkRegionVar(inputRgn.getRegionInfo());
      bb.region_copy(m_lfac.mkRegionVar(inputRgn), inputPrime);
+     region_input_map.insert({inputRgn, inputPrime});
      inputs.push_back(inputPrime);
   };
   
@@ -4737,6 +4744,7 @@ void CfgBuilderImpl::addFunctionDeclaration() {
         // input version
         var_t rgn_in = m_lfac.mkRegionVar(rgn.getRegionInfo());
         tmp_bb1->region_copy(m_lfac.mkRegionVar(rgn), rgn_in);
+        region_input_map.insert({rgn, rgn_in});
         inputs.push_back(rgn_in);
         // output version
         outputs.push_back(m_lfac.mkRegionVar(rgn));
@@ -4765,13 +4773,26 @@ void CfgBuilderImpl::addFunctionDeclaration() {
     auto equivClassRegions = m_mem.getEquivClassRegions(m_func);      
     for(auto eqC: equivClassRegions) {
       std::vector<var_or_cst_t> intrinsicIns;
+      std::vector<var_or_cst_t> intrinsicIns2;
+      std::vector<var_t> intrinsicIns3;
       for (auto rgn: eqC) {
-	if (!getSingletonValue(rgn, m_params.lower_singleton_aliases)) {
-	  intrinsicIns.push_back(m_lfac.mkRegionVar(rgn));
-	}
+        if (!getSingletonValue(rgn, m_params.lower_singleton_aliases)) {
+          intrinsicIns.push_back(m_lfac.mkRegionVar(rgn));
+          intrinsicIns3.push_back(m_lfac.mkRegionVar(rgn));
+          auto it = region_input_map.find(rgn);
+          if (it != region_input_map.end()) {
+            intrinsicIns2.push_back(it->second);
+          }
+        }
+      }
+      if (intrinsicIns2.size() > 1) {
+	tmp_bb3->intrinsic("regions_from_memory_object", {}, intrinsicIns2);
       }
       if (intrinsicIns.size() > 1) {
 	tmp_bb3->intrinsic("regions_from_memory_object", {}, intrinsicIns);
+      }
+      if (intrinsicIns2.size() > 1) {
+	tmp_bb3->intrinsic("copy_memory_object", intrinsicIns3, intrinsicIns2);
       }
     }      
   }
@@ -4795,7 +4816,6 @@ void CfgBuilderImpl::addFunctionDeclaration() {
 
   if (!m_func.getName().equals("main") && ret_mem_obj_intrinsicIns.size() > 1 &&
       m_cfg->has_exit()) {
-    basic_block_t &exit = m_cfg->get_node(m_cfg->exit());
     if (m_ret_insts) {
       m_ret_insts->intrinsic("commit_cache", {}, ret_mem_obj_intrinsicIns);
     } else {

@@ -212,6 +212,16 @@ public:
   }
 };
 
+class RegionHashFunction {
+public:
+ 
+    // Use as hash function.
+    size_t operator()(const Region& r) const noexcept
+    {
+      return r.getId();
+    }
+};
+
 inline llvm::raw_ostream &operator<<(llvm::raw_ostream &o,
                                      std::vector<Region> s) {
   o << "{";
