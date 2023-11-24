@@ -89,9 +89,10 @@ class ObjectParams {
 public:
   using number_t = clam::number_t;
   using varname_t = clam::varname_t;
-  using varname_allocator_t = str_var_allocator;
+  using varname_allocator_t = typename varname_t::variable_factory_t;
   using base_abstract_domain_t = BaseAbsDom;
   using field_abstract_domain_t = BaseAbsDom;
+  using base_varname_t = typename BaseAbsDom::varname_t;
 };
 #else
 template<class BaseAbsDom>
