@@ -414,10 +414,9 @@ private:
 
     if (dumpCrabIR || dumpStdout) {
       std::vector<std::unique_ptr<block_annotation_t>> annotations;
+      std::vector<varname_t> shadow_varnames;
+      assumption_analysis_t unproven_assumption_analyzer(cfg);      
       if (params.print_invars != InvariantPrinterOptions::NONE) {
-	std::vector<varname_t> shadow_varnames;
-	assumption_analysis_t unproven_assumption_analyzer(cfg);
-	
 	if (!params.keep_shadow_vars) {
 	  shadow_varnames = m_vfac.get_shadow_vars();
 	}
