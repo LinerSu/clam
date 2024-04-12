@@ -50,6 +50,13 @@ def isexec(fpath):
         return False
     return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
 
+# Function to process each '-D' option
+def parse_macro_value(option_string):
+    if '=' in option_string:
+        return tuple(option_string.split('=', 1))
+    else:
+        return (option_string, '1')
+
 def which(program):
     if isinstance(program, str):
         choices = [program]
@@ -221,6 +228,9 @@ def parseArgs(argv):
     p.add_argument('--clang-version',
                     help='Print clang version', dest='clang_version',
                     default=False, action='store_true')
+    p.add_argument('-D', action='append', type=parse_macro_value, 
+                    metavar='MACRO=VALUE', 
+                    help="Define MACRO to VALUE (or 1 if VALUE omitted)")
     p.add_argument('--llvm-dot-cfg',
                     help='Print LLVM CFG of function to dot file',
                     dest='dot_cfg', default=False, action='store_true')
@@ -658,6 +668,10 @@ def clang(in_name, out_name, args, arch=32, extra_args=[]):
     include_dir = os.path.join (include_dir, 'include')
     clang_args.append ('-I' + include_dir)
 
+    # Insert compile marcros
+    if args.D:
+        for macro, value in args.D:
+            clang_args.append('-D'+macro+'='+value)
 
     # Disable always vectorization
     if not args.disable_scalarize:
