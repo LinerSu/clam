@@ -112,6 +112,10 @@ option(CLAM_USE_DBM_BIGNUM "Use big numbers for DBM weights" OFF)
 option(CLAM_USE_DBM_SAFEINT "Use safe integers for DBM weights" OFF)
 option(CLAM_INCLUDE_ALL_DOMAINS "Include all default abstract domains" ON)
 
+if (CLAM_USE_DBM_BIGNUM AND CLAM_USE_DBM_SAFEINT)
+  message(FATAL_ERROR "Crab: cannot use both big numbers and safe integers for DBM weights. Choose one")
+endif()  
+  
 if (CLAM_USE_DBM_BIGNUM)
   message(STATUS "Crab: DBM-based domains will use big numbers for representing weights")  
   set(USE_DBM_BIGNUM TRUE)
@@ -122,6 +126,7 @@ else()
     set(USE_DBM_SAFEINT TRUE)
   else()
     set(USE_DBM_SAFEINT FALSE)
+    message(STATUS "Crab: DBM-based domains will use unsafe (i.e., they can wraparound) integers for representing weights")  
   endif()
 endif()
 
