@@ -3720,7 +3720,14 @@ CfgBuilderImpl::getCrabBasicBlock(const BasicBlock *src,
 
 llvm::Optional<var_t> CfgBuilderImpl::getCrabVariable(const llvm::Value &v) {
   crab_lit_ref_t lit = m_lfac.getLit(v);
-  return (lit->isVar() ? llvm::Optional<var_t>(lit->getVar()) : llvm::Optional<var_t>());
+  if (lit == nullptr || !lit->isVar()) {
+    // getLit only supports integers and pointers. For instance, if v is the lhs of this instruction:
+    //    %x = call { i64, i1 } @llvm.umul.with.overflow.i64(...)
+    // then lit will be null.
+    return llvm::None;
+  } else {
+    return llvm::Optional<var_t>(lit->getVar());
+  }
 }
 
 
