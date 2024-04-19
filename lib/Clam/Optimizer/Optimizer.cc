@@ -136,7 +136,7 @@ private:
   }
 
   static Value *mkVar(varname_t v) {
-    return (v.get() ? const_cast<Value *>(*(v.get())) : nullptr);
+    return (v.get() ? *(v.get()) : nullptr);
   }
 
   static Value *mkBool(LLVMContext &ctx, bool val) {
@@ -147,7 +147,7 @@ private:
     if (!var.get()) {
       return nullptr;
     } else {
-      Type *Ty = (const_cast<Value *>(*(var.get())))->getType();
+      Type *Ty = (*(var.get()))->getType();
       if (IntegerType *ITy = dyn_cast<IntegerType>(Ty)) {
         return ITy;
       }

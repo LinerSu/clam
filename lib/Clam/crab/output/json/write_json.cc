@@ -111,8 +111,7 @@ void json_report_impl::write_invariants(cfg_ref_t cfg,
       std::vector<var_t> out;
       for (auto const&cst: csts) {
 	for (auto v : cst.variables()) {
-	  boost::optional<const llvm::Value*> llvm_v = v.name().get();
-	  if (llvm_v == boost::none) {
+	  if (v.name().get() == boost::none) {
 	    out.push_back(v);
 	  }
 	}

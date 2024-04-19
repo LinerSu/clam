@@ -7,8 +7,10 @@
  */
 
 #include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/Value.h"
+#include "llvm/IR/ValueHandle.h"
 #include "llvm/Support/raw_ostream.h"
+
+#include "clam/Support/Debug.hh"
 
 #include "crab/analysis/dataflow/liveness.hpp"
 #include "crab/cfg/cfg.hpp"
@@ -110,11 +112,21 @@ template <> struct hash<clam::llvm_basic_block_wrapper> {
     return bb.hash();
   }
 };
+
+template <> struct hash<llvm::WeakVH> {
+  size_t operator()(const llvm::WeakVH &VH) const {
+    if (VH == nullptr) {
+      CLAM_ERROR("Trying to hash an invalid WeakVH");
+    }
+    return std::hash<llvm::Value*>{}(VH);
+  }
+}; 
 } // namespace std
+
 
 namespace clam {
 /** Define a Crab CFG and call graph over integers **/
-using variable_factory_t = crab::var_factory_impl::variable_factory<const llvm::Value*>; 
+using variable_factory_t = crab::var_factory_impl::variable_factory<llvm::WeakVH>; 
 using varname_t = typename variable_factory_t::varname_t;
 using number_t = ikos::z_number;
 using var_t = crab::variable<number_t, varname_t>;
@@ -148,9 +160,9 @@ using varset_t = typename liveness_t::varset_domain_t;
 } // end namespace clam
 
 namespace crab {
-template <> class variable_name_traits<const llvm::Value *> {
+template <> class variable_name_traits<llvm::WeakVH> {
 public:
-  static std::string to_string(const llvm::Value *v) {
+  static std::string to_string(llvm::WeakVH v) {
     return v->getName().str();
   }
 };

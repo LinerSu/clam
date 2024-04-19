@@ -52,7 +52,8 @@ static const Instruction* getInstruction(statement_t &s) {
   if (s.get_live().num_defs() == 1) {
     var_t v = *(s.get_live().defs_begin());
     if (v.name().get()) {
-      if (auto I = dyn_cast<const Instruction>(*(v.name().get()))) {
+      // The result of the cast can be null if llvm Value handler becomes invalid.
+      if (auto I = dyn_cast_or_null<const Instruction>(*(v.name().get()))) {
 	return I;
       }
     }

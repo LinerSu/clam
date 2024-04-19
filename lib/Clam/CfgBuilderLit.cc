@@ -386,7 +386,8 @@ Optional<crabBoolLit> crabLitFactoryImpl::getBoolLit(const Value &v) {
         // nondeterministic value.
         return crabBoolLit(var_t(m_vfac.get(), BOOL_TYPE, 1));
       } else {
-        return crabBoolLit(var_t(m_vfac[&v], BOOL_TYPE, 1));
+	WeakVH VH(const_cast<Value*>(&v));
+        return crabBoolLit(var_t(m_vfac[VH], BOOL_TYPE, 1));
       }
     }
   }
@@ -404,7 +405,8 @@ Optional<crabRefLit> crabLitFactoryImpl::getRefLit(const Value &v) {
       // nondeterministic value.
       return crabRefLit(var_t(m_vfac.get(), REF_TYPE));
     } else {
-      return crabRefLit(var_t(m_vfac[&v], REF_TYPE));
+      WeakVH VH(const_cast<Value*>(&v));      
+      return crabRefLit(var_t(m_vfac[VH], REF_TYPE));
     }
   }
   return None;
@@ -428,7 +430,8 @@ Optional<crabIntLit> crabLitFactoryImpl::getIntLit(const Value &v, bool IntCstAs
         // nondeterministic value.
         return crabIntLit(var_t(m_vfac.get(), INT_TYPE, bitwidth));
       } else {
-        return crabIntLit(var_t(m_vfac[&v], INT_TYPE, bitwidth));
+	WeakVH VH(const_cast<Value*>(&v));      	
+        return crabIntLit(var_t(m_vfac[VH], INT_TYPE, bitwidth));
       }
     }
   }
