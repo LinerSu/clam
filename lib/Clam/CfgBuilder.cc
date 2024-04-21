@@ -2084,10 +2084,18 @@ void CrabIntraBlockBuilder::visitCastInst(CastInst &I) {
           m_bb.assume_ref(ref_cst_t::mk_null(dst->getVar()));
           return;
         } else {
-
           assert(src->isVar());
           Region rgn_src =
               getRegion(m_mem, m_func_regions, m_params, I, *(I.getOperand(0)));
+
+	  if (getSingletonValue(rgn_src, m_params.lower_singleton_aliases)) {
+	    // the memory region is a non-sequence singleton so we bail out
+	    // because it will translated somewhere else (e.g., next Load or
+	    // Store)
+	    CRAB_LOG("cfg-gep", llvm::errs() << "-- skipped singleton\n");
+	    return;
+	  }
+
           Region rgn_dst = getRegion(m_mem, m_func_regions, m_params, I, I);
 	  insertCrabIRWithEmitter::
 	    gep_ref(I, m_propertyEmitters, m_bb,
