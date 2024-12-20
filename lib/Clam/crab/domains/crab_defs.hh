@@ -17,6 +17,9 @@
 #else
 #include <crab/domains/region_domain.hpp>
 #endif
+#ifdef HAS_TVPI_DBM_DOM
+#include <crab/domains/tvpi_dbm.hpp>
+#endif
 #include <crab/domains/term_equiv.hpp>
 #ifdef HAS_VAR_PACK_TVPI_DOM
 #include <crab/domains/numerical_packing.hpp>
@@ -53,7 +56,11 @@ using str_varname_t = str_var_allocator::varname_t;
 #ifdef HAS_VAR_PACK_TVPI_DOM
 #define VAR_TVPI_FUN(DOM) numerical_packing_domain<fixed_tvpi_domain<DOM>>
 #else
+#ifdef HAS_TVPI_DBM_DOM
+#define VAR_TVPI_FUN(DOM) tvpi_dbm_domain<DOM>
+#else
 #define VAR_TVPI_FUN(DOM) DOM
+#endif
 #endif
 /* ====================================================================== */    
 /* END MACROS to create the hierarchy of domains. Only for internal use   */

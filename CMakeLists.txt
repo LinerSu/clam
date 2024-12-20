@@ -347,10 +347,16 @@ endif()
 #---------------------------------------#
 option(CLAM_USE_OBJECT_DOM OFF)
 option(CLAM_USE_DBM_VAR_TVPI OFF)
+option(CLAM_USE_TVPI_DBM OFF)
 
 if(CLAM_USE_OBJECT_DOM AND EXISTS ${CRAB_ROOT}/include/crab/domains/object_domain.hpp)
   set(HAS_OBJECT_DOMAIN TRUE)
   message(STATUS "Crab: use object domain (for testing)")
+endif()
+
+if (CLAM_USE_TVPI_DBM AND EXISTS ${CRAB_ROOT}/include/crab/domains/tvpi_dbm.hpp)
+  set(HAS_TVPI_DBM_DOM TRUE)
+  message(STATUS "Crab: use tvpi + dbm (for testing)")
 endif()
 
 if (CLAM_USE_DBM_VAR_TVPI AND EXISTS ${CRAB_ROOT}/include/crab/domains/numerical_packing.hpp)

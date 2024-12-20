@@ -47,7 +47,7 @@ using DBMParams = FastDBMParams;
 using BASE(split_dbm_domain_t) =
   crab::domains::split_dbm_domain<number_t, region_subdom_varname_t, DBMParams>;
 using split_dbm_domain_t =
-  RGN_FUN(ARRAY_FUN(BOOL_NUM(BASE(split_dbm_domain_t))));
+    RGN_FUN(ARRAY_FUN(BOOL_NUM(VAR_TVPI_FUN(BASE(split_dbm_domain_t)))));
 
 using BASE(fixed_tvpi_split_dbm_domain_t) = fixed_tvpi_domain<BASE(split_dbm_domain_t)>;  
 using fixed_tvpi_split_dbm_domain_t =
