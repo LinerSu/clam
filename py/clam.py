@@ -330,11 +330,12 @@ def parseArgs(argv):
                           "- pk: polyhedra domain from Apron or Elina\n"
                           "- pk-pplite: polyhedra domain from PPLite\n"                   
                           "- rtz: reduced product of term-dis-int with zones\n"
+                          "- tvpi-dbm: zones domain for TVPI\n"
                           "- w-int: wrapped intervals\n",
                     choices=['int', 'sign-const', 'ric', 'term-int',
                              'dis-int', 'term-dis-int', 'boxes',
                              'zones', 'non-unit-zones', 'soct', 'oct', 'pk', 'pk-pplite', 'rtz',
-                             'w-int'],
+                             'w-int', 'tvpi-dbm'],
                     dest='crab_dom', default='zones')
     p.add_argument('--crab-dom-params', dest='crab_dom_params', default=None,
                    help="Set abstract domain options STR=\"param1=val1:param2=val2:...\"",

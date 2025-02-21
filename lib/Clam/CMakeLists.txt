@@ -30,6 +30,7 @@ add_llvm_library(ClamAnalysis ${CLAM_LIBS_TYPE} DISABLE_LLVM_LINK_LLVM_DYLIB
   crab/domains/terms_intervals.cc
   crab/domains/terms_zones.cc
   crab/domains/wrapped_intervals.cc
+  crab/domains/tvpi_dbm.cc
   Support/BoostException.cc
   Support/CFGPrinter.cc
   Properties/MemoryCheckUtils.cc

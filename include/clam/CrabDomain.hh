@@ -70,21 +70,23 @@ constexpr Type SIGN_CONSTANTS(14, "sign-const", "sign+constants", false, false);
 constexpr Type NON_UNIT_ZONES(15, "non-unit-zones",
                                "zones with a fixed set of non-unit coefficients", true,
                                false);
-  
-constexpr std::array<Type, 15> List = {INTERVALS,
+constexpr Type TVPI_DBM(16, "tvpi-dbm", "TVPI+DBM", true, false);
+
+constexpr std::array<Type, 16> List = {INTERVALS,
                                        INTERVALS_CONGRUENCES,
                                        WRAPPED_INTERVALS,
                                        BOXES,
                                        DIS_INTERVALS,
                                        ZONES_SPLIT_DBM,
-				       NON_UNIT_ZONES,
-				       OCT_SPLIT_DBM,
+                                       NON_UNIT_ZONES,
+                                       OCT_SPLIT_DBM,
                                        TERMS_INTERVALS,
                                        TERMS_DIS_INTERVALS,
                                        TERMS_ZONES,
                                        OCT,
                                        PK,
-				       PK_PPLITE,
-				       SIGN_CONSTANTS};
+                                       PK_PPLITE,
+                                       SIGN_CONSTANTS,
+                                       TVPI_DBM};
 } // end namespace CrabDomain
 } // end namespace clam
