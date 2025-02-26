@@ -17,4 +17,5 @@ extern bool register_term_int_domain();
 extern bool register_num_domain();  
 extern bool register_wrapped_interval_domain();
 extern bool register_tvpi_dbm_domain();
+extern bool register_fixed_tvpi_dbm_domain();
 } // end namespace clam

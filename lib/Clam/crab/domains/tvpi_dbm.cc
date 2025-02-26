@@ -6,8 +6,10 @@
 namespace clam {
 #ifdef INCLUDE_ALL_DOMAINS
 REGISTER_DOMAIN(clam::CrabDomain::TVPI_DBM, tvpi_dbm_domain)
+REGISTER_DOMAIN(clam::CrabDomain::FIXED_TVPI_DBM, fixed_tvpi_dbm_domain)
 #else
 UNREGISTER_DOMAIN(tvpi_dbm_domain)
+UNREGISTER_DOMAIN(fixed_tvpi_dbm_domain)
 #endif
 } // end namespace clam
 

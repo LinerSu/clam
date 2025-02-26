@@ -71,8 +71,9 @@ constexpr Type NON_UNIT_ZONES(15, "non-unit-zones",
                                "zones with a fixed set of non-unit coefficients", true,
                                false);
 constexpr Type TVPI_DBM(16, "tvpi-dbm", "TVPI+DBM", true, false);
+constexpr Type FIXED_TVPI_DBM(17, "fixed-tvpi-dbm", "Fixed TVPI+DBM", true, false);
 
-constexpr std::array<Type, 16> List = {INTERVALS,
+constexpr std::array<Type, 17> List = {INTERVALS,
                                        INTERVALS_CONGRUENCES,
                                        WRAPPED_INTERVALS,
                                        BOXES,
@@ -87,6 +88,7 @@ constexpr std::array<Type, 16> List = {INTERVALS,
                                        PK,
                                        PK_PPLITE,
                                        SIGN_CONSTANTS,
-                                       TVPI_DBM};
+                                       TVPI_DBM,
+                                       FIXED_TVPI_DBM};
 } // end namespace CrabDomain
 } // end namespace clam
