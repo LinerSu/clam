@@ -8,6 +8,8 @@
 #include "seadsa/Graph.hh"
 
 #include "SeaDsaHeapAbstractionUtils.hh"
+#include "clam/Support/Debug.hh"
+#include "crab/support/debug.hpp"
 
 #include <algorithm>
 
@@ -23,17 +25,17 @@ bool NodeOrdering::operator()(const seadsa::Node *n1,
   return n1->getId() < n2->getId();
 }
 
-void set_difference(NodeSet &s1, NodeSet &s2) {
+void set_difference(NodeSet &s1, const NodeSet &s2) {
   NodeSet s3;
   std::set_difference(s1.begin(), s1.end(), s2.begin(), s2.end(),
-                      std::inserter(s3, s3.end()));
+                      std::inserter(s3, s3.end()), NodeOrdering{});
   std::swap(s3, s1);
 }
 
-void set_union(NodeSet &s1, NodeSet &s2) {
+void set_union(NodeSet &s1, const NodeSet &s2) {
   NodeSet s3;
   std::set_union(s1.begin(), s1.end(), s2.begin(), s2.end(),
-                 std::inserter(s3, s3.end()));
+                 std::inserter(s3, s3.end()), NodeOrdering{});
   std::swap(s3, s1);
 }
 

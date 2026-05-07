@@ -22,9 +22,9 @@ struct NodeOrdering {
 
 using NodeSet = std::set<const seadsa::Node *, NodeOrdering>;
 
-void set_difference(NodeSet &s1, NodeSet &s2);
+void set_difference(NodeSet &s1, const NodeSet &s2);
 
-void set_union(NodeSet &s1, NodeSet &s2);
+void set_union(NodeSet &s1, const NodeSet &s2);
 
 void markReachableNodes(const seadsa::Node *n, NodeSet &set);
 
