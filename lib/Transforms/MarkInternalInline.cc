@@ -1,3 +1,4 @@
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 
@@ -16,7 +17,7 @@ struct MarkInternalInline : public ModulePass {
 
   virtual bool runOnModule(Module &M) override {
     for (Function &F : M)
-      if (!F.isDeclaration() && F.hasLocalLinkage()) {
+      if (!F.isDeclaration() && F.hasLocalLinkage() && !hasRecursiveCall(F)) {
         F.setLinkage(GlobalValue::PrivateLinkage);
         F.removeFnAttr(Attribute::NoInline);
         F.removeFnAttr(Attribute::OptimizeNone);
@@ -27,6 +28,20 @@ struct MarkInternalInline : public ModulePass {
 
   virtual StringRef getPassName() const override {
     return "Clam: Mark internal functions with AlwaysInline attribute";
+  }
+
+private:
+  bool hasRecursiveCall(Function &F) {
+    for (BasicBlock &BB : F) {
+      for (Instruction &I : BB) {
+        if (auto *CI = dyn_cast<CallInst>(&I)) {
+          if (CI->getCalledFunction() == &F) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 };
 
