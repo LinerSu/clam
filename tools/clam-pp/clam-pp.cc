@@ -21,8 +21,10 @@
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/IPO.h"
+#include "llvm/Transforms/Scalar/LICM.h"
 
 #include "clam/Passes.hh"
+#include "clam/Support/Debug.hh"
 #include "clam/config.h"
 
 #ifdef HAVE_LLVM_SEAHORN
@@ -89,6 +91,11 @@ static llvm::cl::opt<bool>
                 llvm::cl::desc("Lower all select instructions"),
                 llvm::cl::init(false));
 
+static llvm::cl::opt<bool>
+    LowerMemCpy("clam-lower-memcpy",
+                llvm::cl::desc("Lower all memcpy instructions"),
+                llvm::cl::init(false));
+
 static llvm::cl::opt<bool> ExternalizeAddrTakenFuncs(
     "clam-externalize-addr-taken-funcs",
     llvm::cl::desc("Externalize uses of address-taken functions"),
@@ -98,6 +105,12 @@ static llvm::cl::opt<bool>
     LowerUnsignedICmp("clam-lower-unsigned-icmp",
                       llvm::cl::desc("Lower ULT and ULE instructions"),
                       llvm::cl::init(false));
+
+static llvm::cl::opt<std::string> NoInlineFuncs(
+    "clam-noinline-funcs",
+    llvm::cl::desc(
+        "Comma-separated list of function names to preserve from inlining"),
+    llvm::cl::init(""), llvm::cl::value_desc("func1,func2,..."));
 
 static llvm::cl::opt<bool>
     OptimizeLoops("clam-pp-loops", llvm::cl::desc("Perform loop optimizations"),
@@ -111,6 +124,22 @@ static llvm::cl::opt<bool> TurnUndefNondet(
     "clam-turn-undef-nondet",
     llvm::cl::desc("Turn undefined behaviour into non-determinism"),
     llvm::cl::init(false));
+
+static llvm::cl::opt<bool> AggressiveLoopOpt(
+    "clam-aggressive-loop-opt",
+    llvm::cl::desc("Enable expensive loop optimizations (LICM, IndVar)"),
+    llvm::cl::init(false));
+
+struct LogOpt {
+  void operator=(const std::string &tag) const { crab::CrabEnableLog(tag); }
+};
+
+LogOpt loc;
+
+static llvm::cl::opt<LogOpt, true, llvm::cl::parser<std::string>>
+    LogClOption("crab-log", llvm::cl::desc("Enable specified log level"),
+                llvm::cl::location(loc), llvm::cl::value_desc("string"),
+                llvm::cl::ValueRequired, llvm::cl::ZeroOrMore);
 
 // removes extension from filename if there is one
 std::string getFileName(const std::string &str) {
@@ -234,8 +263,32 @@ int main(int argc, char **argv) {
 
   // -- turn all functions internal so that we can apply some global
   // -- optimizations inline them if requested
-  auto PreserveMain = [=](const llvm::GlobalValue &GV) {
-    return GV.getName() == "main";
+  // Parse comma-separated list of functions to preserve
+  std::set<std::string> noInlineFuncNames;
+  noInlineFuncNames.insert("main"); // Always preserve main
+  if (!NoInlineFuncs.empty()) {
+    std::string funcs = NoInlineFuncs;
+    size_t pos = 0;
+    while ((pos = funcs.find(',')) != std::string::npos) {
+      std::string func = funcs.substr(0, pos);
+      // Trim whitespace
+      func.erase(0, func.find_first_not_of(" \t\n\r"));
+      func.erase(func.find_last_not_of(" \t\n\r") + 1);
+      if (!func.empty()) {
+        noInlineFuncNames.insert(func);
+      }
+      funcs.erase(0, pos + 1);
+    }
+    // Process last function name
+    std::string func = funcs;
+    func.erase(0, func.find_first_not_of(" \t\n\r"));
+    func.erase(func.find_last_not_of(" \t\n\r") + 1);
+    if (!func.empty()) {
+      noInlineFuncNames.insert(func);
+    }
+  }
+  auto PreserveMain = [noInlineFuncNames](const llvm::GlobalValue &GV) {
+    return noInlineFuncNames.count(GV.getName().str()) > 0;
   };
   pass_manager.add(llvm::createInternalizePass(PreserveMain));
 
@@ -265,6 +318,12 @@ int main(int argc, char **argv) {
     pass_manager.add(clam::createNondetInitPass());
   }
 
+  // -- Promote memcpy to loads-and-stores for easier alias analysis.
+  if (LowerMemCpy) {
+    pass_manager.add(clam::createLazyValueConstPass());
+    pass_manager.add(clam::createPromoteMemcpyPass());
+  }
+
   // -- cleanup after SSA
   pass_manager.add(clam::createInstCombine());
   pass_manager.add(llvm::createCFGSimplificationPass());
@@ -289,23 +348,29 @@ int main(int argc, char **argv) {
     pass_manager.add(llvm::createCFGSimplificationPass());
   }
 
+  pass_manager.add(clam::createInsertTaintIntrinsicPass());
+
   if (InlineAll) {
     pass_manager.add(clam::createMarkInternalInlinePass());
     pass_manager.add(llvm::createAlwaysInlinerLegacyPass());
-    // // after inlining we promote malloc to alloca instructions
-    // pass_manager.add(clam::createPromoteMallocPass());
-    // // kill unused internal global
-    // pass_manager.add(llvm::createGlobalDCEPass());
-    pass_manager.add(
-        llvm::createGlobalDCEPass()); // kill unused internal global
+    // -- kill unused internal global
+    pass_manager.add(llvm::createGlobalDCEPass());
     // -- promote malloc to alloca
     pass_manager.add(clam::createPromoteMallocPass());
-    pass_manager.add(
-        llvm::createGlobalDCEPass()); // kill unused internal global
+    // -- kill unused internal global
+    pass_manager.add(llvm::createGlobalDCEPass());
     // XXX: for svcomp ssh programs we need to run twice to break all
     // relevant allocas
     breakAllocas(pass_manager);
     breakAllocas(pass_manager);
+    if (LowerMemCpy) {
+      // -- mem2reg
+      pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
+      // -- constant value analysis
+      pass_manager.add(clam::createLazyValueConstPass());
+      // -- Promote memcpy to loads-and-stores for easier alias analysis.
+      pass_manager.add(clam::createPromoteMemcpyPass());
+    }
   }
 
   pass_manager.add(clam::createRemoveUnreachableBlocksPass());
@@ -318,6 +383,7 @@ int main(int argc, char **argv) {
     pass_manager.add(llvm::createLoopSimplifyPass());
     // cleanup unnecessary blocks
     pass_manager.add(llvm::createCFGSimplificationPass());
+    pass_manager.add(llvm::createLoopSimplifyCFGPass());
     // rotate loops:
     // we don't like rotated loops unless it's strictly necessary
     if (PeelLoops > 0) {
@@ -331,16 +397,18 @@ int main(int argc, char **argv) {
     pass_manager.add(llvm::createLCSSAPass());
     if (PeelLoops > 0)
       pass_manager.add(clam::createLoopPeelerPass(PeelLoops));
+    if (AggressiveLoopOpt) {
 #ifdef HAVE_LLVM_SEAHORN
-    // induction variable requires loop-closed SSA
-    // Preserved by LoopPeelerPass
-    // pass_manager.add(llvm::createLCSSAPass());
-    // induction variable
-    pass_manager.add(llvm_seahorn::createIndVarSimplifyPass());
+      // induction variable requires loop-closed SSA
+      // Preserved by LoopPeelerPass
+      // pass_manager.add(llvm::createLCSSAPass());
+      // induction variable
+      pass_manager.add(llvm_seahorn::createIndVarSimplifyPass());
 #endif
-    // trivial invariants outside loops
-    pass_manager.add(llvm::createBasicAAWrapperPass());
-    pass_manager.add(llvm::createLICMPass()); // LICM needs alias analysis
+      // trivial invariants outside loops
+      pass_manager.add(llvm::createBasicAAWrapperPass());
+      pass_manager.add(llvm::createLICMPass()); // LICM needs alias analysis
+    }
     pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
     // dead loop elimination
     pass_manager.add(llvm::createLoopDeletionPass());
