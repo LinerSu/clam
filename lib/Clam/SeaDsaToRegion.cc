@@ -203,7 +203,8 @@ RegionInfo SeaDsaToRegion(const Cell &c, const DataLayout &dl,
                           bool disambiguate_external) {
 
   auto defaultRegionInfo = [](bool isSequence, bool isHeap, bool isCyclic) {
-      return RegionInfo(region_type_t::UNTYPED_REGION, 0, isSequence, isHeap, isCyclic);
+    return RegionInfo(region_type_t::UNTYPED_REGION, 0, 0, isSequence, isHeap,
+                      isCyclic);
   };
 
   if (c.isNull()) {
@@ -216,7 +217,7 @@ RegionInfo SeaDsaToRegion(const Cell &c, const DataLayout &dl,
   CRAB_LOG("heap-abs-seadsa-to-region",
            errs() << "*** Checking whether node at offset " << offset
                   << " can be converted to region ... \n"
-                  << "\t" << *n << "\n";);
+                  << n->getId() << "\t" << *n << "\n";);
 
   if (!n->isModified() && !n->isRead()) {
     CRAB_LOG("heap-abs-seadsa-to-region",
@@ -259,7 +260,7 @@ RegionInfo SeaDsaToRegion(const Cell &c, const DataLayout &dl,
                       << "\tFound INT_REGION at offset " << offset
                       << " with bitwidth=" << int_pred.m_bitwidth << "\n";);
 
-      return RegionInfo(region_type_t::INT_REGION, int_pred.m_bitwidth,
+      return RegionInfo(region_type_t::INT_REGION, int_pred.m_bitwidth, offset,
                         n->isArray(), n->isHeap(), IsCyclic(n));
     } else {
       CRAB_LOG(
@@ -277,7 +278,7 @@ RegionInfo SeaDsaToRegion(const Cell &c, const DataLayout &dl,
                errs() << "\tDisambiguation succeed!\n"
                       << "\tFound BOOL_REGION at offset " << offset
                       << " with bitwidth=1\n";);
-      return RegionInfo(region_type_t::BOOL_REGION, 1, n->isArray(),
+      return RegionInfo(region_type_t::BOOL_REGION, 1, offset, n->isArray(),
                         n->isHeap(), IsCyclic(n));
     } else {
       CRAB_LOG(
@@ -298,7 +299,7 @@ RegionInfo SeaDsaToRegion(const Cell &c, const DataLayout &dl,
       // bits.  Crab actually ignores the bitwidth of references but
       // we are trying to avoid type-checking errors.
       return RegionInfo(region_type_t::PTR_REGION,
-                        32 /*dl.getPointerSizeInBits()*/, n->isArray(),
+                        32 /*dl.getPointerSizeInBits()*/, offset, n->isArray(),
                         n->isHeap(), IsCyclic(n));
     } else {
       CRAB_LOG(
