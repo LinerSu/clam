@@ -1,3 +1,9 @@
 /build/
 /debug/
 /ext/
+/sea-dsa/
+/llvm-seahorn/
+/crab/
+__pycache__
+.github
+.vscode
