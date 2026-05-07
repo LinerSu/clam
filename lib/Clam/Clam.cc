@@ -15,9 +15,10 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Format.h"
 #include "llvm/Support/Path.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
 
 #include "clam/config.h"
@@ -58,6 +59,7 @@
 #include "crab/support/debug.hpp"
 #include "crab/support/stats.hpp"
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -441,7 +443,13 @@ private:
       std::unique_ptr<llvm::ToolOutputFile> output = openOutputFile(adjustedOutputCrabIr);
       output->os() << crabir_os.str();
       output->keep();
-      llvm::errs() << "Created file " << adjustedOutputCrabIr << " with analysis results\n";	
+      if (params.print_invars != InvariantPrinterOptions::NONE) {
+        llvm::errs()
+            << "Created file with CrabIR, assertion results, and invariants\n";
+      } else {
+        llvm::errs() << "Created file with CrabIR and assertion results\n";
+      }
+      llvm::errs() << "  path: " << adjustedOutputCrabIr << "\n";
     }
     
     if (dumpJson) {
@@ -1116,7 +1124,13 @@ private:
       assert(crabir_output != nullptr);
       crabir_output->os() << crabir_os.str();	    
       crabir_output->keep();
-      llvm::errs() << "Created file " << params.output_crabir << " with analysis results\n";            
+      if (params.print_invars != InvariantPrinterOptions::NONE) {
+        llvm::errs()
+            << "Created file with CrabIR, assertion results, and invariants\n";
+      } else {
+        llvm::errs() << "Created file with CrabIR and assertion results\n";
+      }
+      llvm::errs() << "  path: " << params.output_crabir << "\n";
     } 
 
     if (dumpJson) {
@@ -1136,8 +1150,8 @@ private:
     
   void analyze(const AnalysisParams &params, clam_abstract_domain init,
                AnalysisResults &results) {
-    
-    CRAB_VERBOSE_IF(1, crab::get_msg_stream()
+
+    CRAB_VERBOSE_IF(0, crab::get_msg_stream()
                            << "Running top-down inter-procedural analysis "
                            << "with domain:"
                            << "\"" << init.domain_name() << "\""
@@ -1341,6 +1355,8 @@ void ClamPass::releaseMemory() {
 }
 
 bool ClamPass::runOnModule(Module &M) {
+  llvm::Optional<double> seaDsaRunningTimeSecs;
+
   /// Translate the module to Crab CFGs
   CrabBuilderParams builder_params;
   builder_params.precision_level = CrabTrackLev;
@@ -1371,7 +1387,8 @@ bool ClamPass::runOnModule(Module &M) {
   switch (CrabHeapAnalysis) {
   case heap_analysis_t::CI_SEA_DSA:
   case heap_analysis_t::CS_SEA_DSA: {
-    CRAB_VERBOSE_IF(1, crab::get_msg_stream() << "Started sea-dsa analysis\n";);
+    CRAB_VERBOSE_IF(0, crab::get_msg_stream() << "Started sea-dsa analysis\n";);
+    auto seaDsaStart = std::chrono::steady_clock::now();
     seadsa::CompleteCallGraph &ccg = getAnalysis<seadsa::CompleteCallGraph>();
     CallGraph &cg = ccg.getCompleteCallGraph();
     seadsa::AllocWrapInfo &allocWrapInfo = getAnalysis<seadsa::AllocWrapInfo>();
@@ -1389,7 +1406,11 @@ bool ClamPass::runOnModule(Module &M) {
     params.disambiguate_ptr_cast = CrabDsaDisambiguatePtrCast;
     params.disambiguate_external = CrabDsaDisambiguateExternal;
     mem.reset(new SeaDsaHeapAbstraction(M, cg, tli, allocWrapInfo, dsaLibFuncInfo, params));
-    CRAB_VERBOSE_IF(1, crab::get_msg_stream() << "Finished sea-dsa analysis\n";);
+    auto seaDsaEnd = std::chrono::steady_clock::now();
+    seaDsaRunningTimeSecs =
+        std::chrono::duration<double>(seaDsaEnd - seaDsaStart).count();
+    CRAB_VERBOSE_IF(0, crab::get_msg_stream()
+                           << "Finished sea-dsa analysis\n";);
     if (CrabDsaDot) {
       seadsa::DsaPrinter
 	printer(*(static_cast<SeaDsaHeapAbstraction*>(&*mem)->getSeaDsa()), &ccg);
@@ -1431,7 +1452,7 @@ bool ClamPass::runOnModule(Module &M) {
   
   unsigned num_analyzed_funcs = 0;
   CRAB_VERBOSE_IF(
-      1,
+      0,
       for (auto &F
            : M) {
         if (isTrackable(F)) {
@@ -1441,7 +1462,7 @@ bool ClamPass::runOnModule(Module &M) {
           << "Started clam\n";
       crab::get_msg_stream()
       << "Total number of analyzed functions:" << num_analyzed_funcs << "\n";);
-  
+
   if (m_params.run_inter) {
     m_ga.reset(new InterGlobalClam(M, *m_cfg_builder_man));
   } else {
@@ -1491,6 +1512,10 @@ bool ClamPass::runOnModule(Module &M) {
   if (m_params.check != CheckerKind::NOCHECKS) {
     llvm::outs() << "\n************** ANALYSIS RESULTS ****************\n";
     printChecks(llvm::outs());
+    if (seaDsaRunningTimeSecs.hasValue()) {
+      llvm::outs() << llvm::format("%.2f SEADSA running times\n",
+                                   seaDsaRunningTimeSecs.getValue());
+    }
     llvm::outs() << "************** ANALYSIS RESULTS END*************\n";
 
     if (m_params.stats) {
