@@ -1,15 +1,13 @@
-#include "clam/config.h"
+#include "SeaDsaHeapAbstractionUtils.hh"
+
+#include "clam/Support/Debug.hh"
+#include "crab/support/debug.hpp"
+#include "seadsa/Graph.hh"
 
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Value.h"
 #include "llvm/Support/raw_ostream.h"
-
-#include "seadsa/Graph.hh"
-
-#include "SeaDsaHeapAbstractionUtils.hh"
-#include "clam/Support/Debug.hh"
-#include "crab/support/debug.hpp"
 
 #include <algorithm>
 
@@ -25,18 +23,26 @@ bool NodeOrdering::operator()(const seadsa::Node *n1,
   return n1->getId() < n2->getId();
 }
 
+OrderedNodeVec orderedNodes(const NodeSet &set) {
+  OrderedNodeVec nodes;
+  nodes.reserve(set.size());
+  for (const seadsa::Node *n : set) {
+    nodes.push_back(n);
+  }
+  std::sort(nodes.begin(), nodes.end(), NodeOrdering{});
+  return nodes;
+}
+
 void set_difference(NodeSet &s1, const NodeSet &s2) {
-  NodeSet s3;
-  std::set_difference(s1.begin(), s1.end(), s2.begin(), s2.end(),
-                      std::inserter(s3, s3.end()), NodeOrdering{});
-  std::swap(s3, s1);
+  for (const seadsa::Node *n : s2) {
+    s1.erase(n);
+  }
 }
 
 void set_union(NodeSet &s1, const NodeSet &s2) {
-  NodeSet s3;
-  std::set_union(s1.begin(), s1.end(), s2.begin(), s2.end(),
-                 std::inserter(s3, s3.end()), NodeOrdering{});
-  std::swap(s3, s1);
+  for (const seadsa::Node *n : s2) {
+    s1.insert(n);
+  }
 }
 
 bool isInteger::operator()(const llvm::Type *t) {

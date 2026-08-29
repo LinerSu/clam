@@ -42,6 +42,7 @@
 #include "seadsa/InitializePasses.hh"
 #include "seadsa/Printer.hh"
 #include "seadsa/support/Debug.h"
+#include "seadsa/support/Stats.hh"
 
 #include "crab/config.h"
 #include "crab/analysis/bwd_analyzer.hpp"
@@ -1343,6 +1344,9 @@ Optional<ClamQueryAPI::TagVector> InterGlobalClam::tags(const BasicBlock &B, con
 /*                       ClamPass methods                        */
 /*****************************************************************/
 
+static void beginSeaDsaStatsSession(bool);
+static void endSeaDsaStatsSession();
+
 ClamPass::ClamPass():
   ModulePass(ID), m_cfg_builder_man(nullptr), m_ga(nullptr) {
   // initialize sea-dsa dependencies
@@ -1351,7 +1355,9 @@ ClamPass::ClamPass():
 }
 
 void ClamPass::releaseMemory() {
-  m_ga->clear();
+  if (m_ga) {
+    m_ga->clear();
+  }
 }
 
 bool ClamPass::runOnModule(Module &M) {
@@ -1405,7 +1411,11 @@ bool ClamPass::runOnModule(Module &M) {
     params.disambiguate_unknown = CrabDsaDisambiguateUnknown;
     params.disambiguate_ptr_cast = CrabDsaDisambiguatePtrCast;
     params.disambiguate_external = CrabDsaDisambiguateExternal;
-    mem.reset(new SeaDsaHeapAbstraction(M, cg, tli, allocWrapInfo, dsaLibFuncInfo, params));
+    {
+      SEADSA_SCOPED_STATS("clam.dsa.heapabs", 1);
+      mem.reset(new SeaDsaHeapAbstraction(M, cg, tli, allocWrapInfo, dsaLibFuncInfo, params));
+    }
+    endSeaDsaStatsSession();
     auto seaDsaEnd = std::chrono::steady_clock::now();
     seaDsaRunningTimeSecs =
         std::chrono::duration<double>(seaDsaEnd - seaDsaStart).count();
@@ -1421,6 +1431,14 @@ bool ClamPass::runOnModule(Module &M) {
   case heap_analysis_t::NONE:
     CLAM_WARNING("running clam without heap analysis");
   }
+
+  if (CrabOnlySeaDsa) {
+    if (CrabHeapAnalysis == heap_analysis_t::NONE) {
+      CLAM_WARNING("crab-only-seadsa enabled but crab-heap-analysis=none");
+    }
+    return false;
+  }
+
   m_cfg_builder_man.reset(
       new CrabBuilderManager(builder_params, tli, std::move(mem)));
    
@@ -1536,6 +1554,14 @@ bool ClamPass::runOnModule(Module &M) {
   return false;
 }
 
+static void beginSeaDsaStatsSession(bool stats_enabled) {
+  if (stats_enabled)
+    seadsa::SeaDsaEnableStats();
+  seadsa::SeaDsaStatsBeginAnalysis();
+}
+
+static void endSeaDsaStatsSession() { seadsa::SeaDsaStatsEndAnalysis(); }
+
 void ClamPass::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesAll();
   AU.addRequired<TargetLibraryInfoWrapperPass>();
@@ -1544,6 +1570,7 @@ void ClamPass::getAnalysisUsage(AnalysisUsage &AU) const {
                     CrabHeapAnalysis == heap_analysis_t::CS_SEA_DSA);
 
   if (runSeaDsa) {
+    beginSeaDsaStatsSession(m_params.stats);
     // dependency for immutable AllocWrapInfo
     AU.addRequired<LoopInfoWrapperPass>();
     AU.addRequired<seadsa::AllocWrapInfo>();

@@ -388,6 +388,7 @@ def parseArgs(argv):
     p.add_argument('--crab-heap-dot',
                     help='Print seadsa memory graphs of each function to dot file',
                     dest='crab_heap_dot', default=False, action='store_true')
+    p.add_argument('--crab-only-seadsa', dest='crab_only_seadsa', default=False, action='store_true')
     p.add_argument('--crab-heap-dot-outdir',
                     help='Output directory for seadsa memory graphs',
                     dest='crab_heap_dot_outdir', default=None, metavar='STR')
@@ -982,7 +983,10 @@ def clam(in_name, out_name, args, extra_opts, cpu = -1, mem = -1):
         clam_args.append('--crab-dsa-dot')
     if args.crab_heap_dot_outdir:
         clam_args.append('--sea-dsa-dot-outdir={0}'.format(args.crab_heap_dot_outdir))
-        
+
+    if args.crab_only_seadsa:
+        clam_args.append('--crab-only-seadsa')
+
     if args.dsa_partial_collapse:
         clam_args.append('--sea-dsa-partial-collapse')
         

@@ -30,10 +30,10 @@
 #include "clam/SeaDsaHeapAbstraction.hh"
 #include "clam/Support/Debug.hh"
 #include "crab/support/debug.hpp"
+#include "seadsa/support/Stats.hh"
 
 #include <algorithm>
 #include <memory>
-#include <set>
 #include <unordered_map>
 
 namespace clam {
@@ -243,16 +243,16 @@ void SeaDsaHeapAbstractionImpl::computeReadModNewNodes(
   CRAB_LOG(
       "heap-abs-regions", llvm::errs() << "After argReachableNodes call:\n";
       for (const Node *n
-           : reach) {
+           : seadsa_heap_abs_impl::orderedNodes(reach)) {
         llvm::errs() << "Node reachable: " << n << "\n";
       } for (const Node *n
-             : retReach) {
+             : seadsa_heap_abs_impl::orderedNodes(retReach)) {
         llvm::errs() << "Node reachable from return: " << n << "\n";
       });
 
   HeapAbstraction::RegionVec reads, mods, news;
   std::vector<HeapAbstraction::RegionVec> equivClasses;
-  for (const Node *n : reach) {
+  for (const Node *n : seadsa_heap_abs_impl::orderedNodes(reach)) {
     bool isRetReach = retReach.count(n) > 0;
 
     if (!isRetReach && !n->isRead() && !n->isModified()) {
@@ -333,11 +333,11 @@ void SeaDsaHeapAbstractionImpl::computeEquivClasses(const llvm::Function &f) {
   // and also reachable from locals
   for (auto &kv : G.scalars()) {
     if (const Node *n = kv.second->getNode()) {
-      markReachableNodes(n, reach);
+      seadsa_heap_abs_impl::markReachableNodes(n, reach);
     }
   }
 
-  for (const Node *n : reach) {
+  for (const Node *n : seadsa_heap_abs_impl::orderedNodes(reach)) {
     bool isRetReach = retReach.count(n) > 0;
     if (!isRetReach && !n->isRead() && !n->isModified()) {
       continue;
@@ -420,7 +420,7 @@ void SeaDsaHeapAbstractionImpl::computeReadModNewNodesFromCallSite(
   Graph::computeCalleeCallerMapping(CS, calleeG, callerG, simMap);
 
   std::vector<std::pair<Region, bool>> reads, mods, news;
-  for (const Node *n : reach) {
+  for (const Node *n : seadsa_heap_abs_impl::orderedNodes(reach)) {
     bool isRetReach = retReach.count(n) > 0;
 
     if (!isRetReach && !n->isRead() && !n->isModified()) {
@@ -714,7 +714,10 @@ SeaDsaHeapAbstractionImpl::SeaDsaHeapAbstractionImpl(
   }
   m_dsa->runOnModule(const_cast<Module &>(M));
 
-  initialize(M);
+  {
+    SEADSA_SCOPED_STATS("clam.dsa.initialize", 1);
+    initialize(M);
+  }
 }
 
 SeaDsaHeapAbstractionImpl::SeaDsaHeapAbstractionImpl(
