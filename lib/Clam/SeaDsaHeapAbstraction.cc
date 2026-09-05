@@ -207,11 +207,25 @@ static std::vector<unsigned> extractFields(const Node *n,
     for (auto &kv : n->types()) {
       fields.push_back(kv.first);
     }
+#ifdef SEA_BUILD_IDSA
+    // I-DSA: a partially-collapsed (interval) cell carries no accessed
+    // types, but it is a memory region like any typed field. It must be
+    // part of the function's read/mod/new regions, otherwise the region is
+    // only created on demand inside each function and whatever a callee
+    // writes into it (e.g. a memcpy into a flexible array member) is lost
+    // at the call boundary: the caller's copy of the region never sees the
+    // tag. Interval cells are keyed by their start offset (the canonical
+    // offset of every access inside the interval).
+    for (const auto &ck : n->getCollapsedCells()) {
+      fields.push_back(ck.getOffset());
+    }
+#endif
     if (fields.empty() && forceZeroOffset) {
       fields.push_back(0);
     }
   }
   std::sort(fields.begin(), fields.end());
+  fields.erase(std::unique(fields.begin(), fields.end()), fields.end());
   return fields;
 }
 
