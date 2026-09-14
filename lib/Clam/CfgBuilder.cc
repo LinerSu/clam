@@ -74,6 +74,7 @@
 #include "clam/SeaDsaHeapAbstraction.hh"
 #include "clam/Support/CFG.hh"
 #include "clam/Support/Debug.hh"
+#include "crab/domains/abstract_domain_params.hpp"
 #include "crab/support/debug.hpp"
 #include "crab/support/stats.hpp"
 #include "crab/transforms/dce.hpp"
@@ -4705,24 +4706,43 @@ void CfgBuilderImpl::addFunctionDeclaration() {
   // }                           BODY(I,...)
   //                          }
   // 
-  auto translateInputValueAsScalar = [this, &inputs](const Value &inputVal, basic_block_t &bb) {
+  // Taint analysis: the formal parameters of the entry function are
+  // values that come from outside the program and have no defining
+  // statement. Under the closed-world policy (crab parameter
+  // region.tag_havoc_clean: taint enters only through declared
+  // sources) they carry no tag, which is stated with a havoc of the
+  // primed input: a havoc'ed scalar or reference is clean under that
+  // policy and unknown (any tag) without it.
+  const bool havocEntryInputs =
+      m_func.getName().equals("main") &&
+      crab::domains::crab_domain_params_man::get().region_tag_havoc_clean();
+  auto translateInputValueAsScalar = [this, &inputs, havocEntryInputs](const Value &inputVal, basic_block_t &bb) {
      crab_lit_ref_t inputLit = m_lfac.getLit(inputVal);
      error_if_null(inputLit, inputVal);
      assert(inputLit->isVar());
      var_t inputVar = inputLit->getVar();
      if (inputVar.get_type().is_bool()) {
        var_t inputPrime = m_lfac.mkBoolVar();
+       if (havocEntryInputs) {
+         bb.havoc(inputPrime, "entry input");
+       }
        bb.bool_assign(inputVar, inputPrime);
        inputs.push_back(inputPrime);
      } else if (inputVar.get_type().is_integer()) {
        unsigned bitwidth = inputVar.get_type().get_integer_bitwidth();
        var_t inputPrime = m_lfac.mkIntVar(bitwidth);
+       if (havocEntryInputs) {
+         bb.havoc(inputPrime, "entry input");
+       }
        bb.assign(inputVar, inputPrime);
        inputs.push_back(inputPrime);
      } else if (inputVar.get_type().is_reference()) {
        Region inputRgn = getRegion(m_mem, m_func_regions, m_params, m_func, inputVal);
        if (!getSingletonValue(inputRgn, m_params.lower_singleton_aliases)) {
 	 var_t inputPrime = m_lfac.mkRefVar();
+	 if (havocEntryInputs) {
+	   bb.havoc(inputPrime, "entry input");
+	 }
 	 // Revisit: we do not call insertCrabIRWithEmitter	 
 	 bb.gep_ref(inputVar, m_lfac.mkRegionVar(inputRgn),
 		    inputPrime, m_lfac.mkRegionVar(inputRgn));
