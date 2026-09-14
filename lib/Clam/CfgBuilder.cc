@@ -4168,8 +4168,21 @@ void CfgBuilderImpl::initializeRegions() {
 	std::copy_if(s->get_lhs().begin(), s->get_lhs().end(),
 		     std::inserter(outputs, outputs.end()),
 		     [](const var_t &v) { return v.get_type().is_region();});
-	std::set_difference(outputs.begin(), outputs.end(), inputs.begin(), inputs.end(),
-			    std::inserter(mustNotInitVars, mustNotInitVars.end()));
+	// Output-only regions are regions in which the callee creates
+	// objects. An unknown-typed one is a fresh view (never
+	// initialized). A typed one collects the objects created at
+	// this and at other call sites: it holds nothing at function
+	// entry, so it is initialized there, and the taint analysis
+	// unions the caller's tags back after each call.
+	for (auto const &v : outputs) {
+	  if (inputs.count(v) == 0) {
+	    if (v.get_type().is_unknown_region()) {
+	      mustNotInitVars.insert(v);
+	    } else {
+	      mayInitVars.insert(v);
+	    }
+	  }
+	}
 	mayInitVars.insert(inputs.begin(), inputs.end());
       } else if ((*it).is_intrinsic()) {
 	auto s = static_cast<typename basic_block_t::intrinsic_t*>(&*it);
@@ -4231,10 +4244,21 @@ void CfgBuilderImpl::initializeRegions() {
     }
   }
 
-  // Do not initialize z in "y := foo(x); cast y to z";  
+  // Regions that are only cast destinations: "y := foo(x); cast y to z".
+  // An unknown-typed destination is a view of its source (never
+  // initialized). A typed destination z collects the objects that
+  // callees create in it: it is empty at function entry, so it is
+  // initialized there and every cast merges into it (for the taint
+  // analysis, region_cast unions the tags into a typed destination;
+  // without the region_init the region would be unknown before its
+  // first cast).
   for (auto v: castDst) {
     if (castSrc.count(v) <= 0) {
-      mustNotInitVars.insert(v);
+      if (v.get_type().is_unknown_region()) {
+        mustNotInitVars.insert(v);
+      } else {
+        mayInitVars.insert(v);
+      }
     }
   }
   
