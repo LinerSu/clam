@@ -4169,18 +4169,13 @@ void CfgBuilderImpl::initializeRegions() {
 		     std::inserter(outputs, outputs.end()),
 		     [](const var_t &v) { return v.get_type().is_region();});
 	// Output-only regions are regions in which the callee creates
-	// objects. An unknown-typed one is a fresh view (never
-	// initialized). A typed one collects the objects created at
-	// this and at other call sites: it holds nothing at function
-	// entry, so it is initialized there, and the taint analysis
-	// unions the caller's tags back after each call.
+	// objects; they collect the objects created at this and at
+	// other call sites and hold nothing at function entry, so they
+	// are initialized there (the taint analysis unions the caller's
+	// tags back after each call, starting from the empty set).
 	for (auto const &v : outputs) {
 	  if (inputs.count(v) == 0) {
-	    if (v.get_type().is_unknown_region()) {
-	      mustNotInitVars.insert(v);
-	    } else {
-	      mayInitVars.insert(v);
-	    }
+	    mayInitVars.insert(v);
 	  }
 	}
 	mayInitVars.insert(inputs.begin(), inputs.end());
@@ -4245,20 +4240,16 @@ void CfgBuilderImpl::initializeRegions() {
   }
 
   // Regions that are only cast destinations: "y := foo(x); cast y to z".
-  // An unknown-typed destination is a view of its source (never
-  // initialized). A typed destination z collects the objects that
-  // callees create in it: it is empty at function entry, so it is
-  // initialized there and every cast merges into it (for the taint
-  // analysis, region_cast unions the tags into a typed destination;
-  // without the region_init the region would be unknown before its
-  // first cast).
+  // A typed destination z collects the objects that callees create in
+  // it: it is empty at function entry, so it is initialized there and
+  // every cast merges into it (for the taint analysis, region_cast
+  // unions the tags into a typed destination; without the region_init
+  // the region would be unknown before its first cast). An
+  // unknown-typed destination is a view defined by its cast; it is
+  // initialized as well (harmless: the cast redefines it).
   for (auto v: castDst) {
     if (castSrc.count(v) <= 0) {
-      if (v.get_type().is_unknown_region()) {
-        mustNotInitVars.insert(v);
-      } else {
-        mayInitVars.insert(v);
-      }
+      mayInitVars.insert(v);
     }
   }
   
