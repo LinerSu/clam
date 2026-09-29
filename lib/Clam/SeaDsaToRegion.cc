@@ -202,8 +202,12 @@ RegionInfo SeaDsaToRegion(const Cell &c, const DataLayout &dl,
                           bool disambiguate_unknown, bool disambiguate_ptr_cast,
                           bool disambiguate_external) {
 
-  auto defaultRegionInfo = [](bool isSequence, bool isHeap, bool isCyclic) {
-    return RegionInfo(region_type_t::UNTYPED_REGION, 0, 0, isSequence, isHeap,
+  // An untyped region keeps the offset of its cell, like a typed one: the
+  // memcpy translation (CfgBuilder, doMemIntrinsic) orders the regions of
+  // a node by offset and drops those before the copied pointer.
+  auto defaultRegionInfo = [&c](bool isSequence, bool isHeap, bool isCyclic) {
+    return RegionInfo(region_type_t::UNTYPED_REGION, 0,
+                      c.isNull() ? 0 : c.getOffset(), isSequence, isHeap,
                       isCyclic);
   };
 

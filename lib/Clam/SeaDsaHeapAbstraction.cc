@@ -8,12 +8,14 @@
  */
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/ImmutableSet.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Value.h"
 #include "llvm/Support/raw_ostream.h"
@@ -40,6 +42,17 @@ namespace clam {
 
 using namespace seadsa;
 using namespace llvm;
+
+// The cells of a graph whose tags a CrabIR statement can read or write
+// although no load or store accesses them: the pointer operands of
+// memcpy, memmove and memset and of the crab intrinsics
+// (__CRAB_intrinsic_*: add_tag, check_*, move_tag, remove_tag, ...).
+struct TagOperandCells {
+  // for each node, the sorted offsets of those cells
+  llvm::DenseMap<const Node *, std::vector<unsigned>> offsets;
+  // the nodes whose tags such an operand may write
+  llvm::DenseSet<const Node *> written;
+};
 
 class SeaDsaHeapAbstractionImpl {
   // XXX: We should use seadsa::Graph::SetFactory.
@@ -70,6 +83,13 @@ class SeaDsaHeapAbstractionImpl {
                                           callsite_map_t &news);
 
   void computeEquivClasses(const llvm::Function &f);
+
+  // Record, in the graph of each function of M, the cells of the
+  // pointer operands of memory intrinsics and crab intrinsics.
+  void computeTagOperandCells(const llvm::Module &M);
+
+  // The tag-operand cells of G (none if G has no such operand).
+  const TagOperandCells &getTagOperandCells(const seadsa::Graph &G) const;
 
   const llvm::Value *getSingleton(HeapAbstraction::RegionId region) const;
 
@@ -168,6 +188,11 @@ private:
   llvm::DenseMap<const llvm::Function *,
                  std::vector<HeapAbstraction::RegionVec>>
       m_func_equiv_class_regions;
+
+  // Tag-operand cells per graph (one graph for all functions under a
+  // context-insensitive sea-dsa)
+  llvm::DenseMap<const seadsa::Graph *, TagOperandCells> m_tag_operand_cells;
+  TagOperandCells m_no_tag_operand_cells;
 };
 
 Region SeaDsaHeapAbstractionImpl::mkRegion(const Cell &c, RegionInfo ri) {
@@ -199,6 +224,7 @@ HeapAbstraction::RegionId SeaDsaHeapAbstractionImpl::getId(const Cell &c) {
 }
 
 static std::vector<unsigned> extractFields(const Node *n,
+                                           const TagOperandCells &tagOperands,
                                            bool forceZeroOffset = true) {
   std::vector<unsigned> fields;
   if (n->isOffsetCollapsed()) {
@@ -223,10 +249,163 @@ static std::vector<unsigned> extractFields(const Node *n,
     if (fields.empty() && forceZeroOffset) {
       fields.push_back(0);
     }
+    // Likewise, a cell that no load or store accesses carries no accessed
+    // type, but a memcpy/memmove/memset or a crab intrinsic (add_tag,
+    // check_*, move_tag, remove_tag, ...) can read or write its tags
+    // through a pointer to it. Such a cell must be a function-interface
+    // region as well: otherwise the region is only created on demand
+    // (getRegion) inside each function, a tag that a callee writes into
+    // it is dropped at the return, and a callee that reads it sees a
+    // freshly initialized region instead of the caller's. (If no load or
+    // store accesses the node at all, the callers below admit it through
+    // these cells: sea-dsa marks neither reads nor modifications for the
+    // operands of external calls, crab intrinsics included.)
+    //
+    // Other cells that pointers reach (e.g. only through gep_ref or
+    // make_ref) are left out: no statement reads or writes their tags.
+    // A memcpy that spans such a cell then has no region to match those
+    // bytes to, as for any byte range that no cell covers.
+    auto it = tagOperands.offsets.find(n);
+    if (it != tagOperands.offsets.end()) {
+      fields.insert(fields.end(), it->second.begin(), it->second.end());
+    }
   }
   std::sort(fields.begin(), fields.end());
   fields.erase(std::unique(fields.begin(), fields.end()), fields.end());
   return fields;
+}
+
+// Crab intrinsics are external declarations named __CRAB_intrinsic_<name>
+// (as isCrabIntrinsic in CfgBuilderUtils). Return <name>, or an empty
+// string for any other callee.
+static StringRef getCrabIntrinsicSuffix(const CallInst &CI) {
+  const Function *callee = dyn_cast<Function>(
+      CI.getCalledOperand()->stripPointerCastsAndAliases());
+  if (!callee || !callee->isDeclaration()) {
+    return StringRef();
+  }
+  static const StringRef prefix("__CRAB_intrinsic_");
+  StringRef name = callee->getName();
+  if (!name.startswith(prefix)) {
+    return StringRef();
+  }
+  return name.drop_front(prefix.size());
+}
+
+void SeaDsaHeapAbstractionImpl::computeTagOperandCells(
+    const llvm::Module &M) {
+  if (!m_dsa || m_params.precision_level != CrabBuilderPrecision::MEM) {
+    // Such cells are untyped, and only the MEM level tracks untyped
+    // regions. Below it, the function would drop the region from its
+    // parameters (isTrackedRegion) while a callsite whose caller cell is
+    // typed would keep it: the parameter lists would no longer match.
+    return;
+  }
+  // Graph::getCell creates a node for a global value on every call, so
+  // the cells of globals are taken from the graph's own map.
+  llvm::DenseMap<const Graph *, llvm::DenseMap<const Value *, const Cell *>>
+      globalCells;
+  for (const Function &F : M) {
+    if (F.isDeclaration() || !m_dsa->hasGraph(F)) {
+      continue;
+    }
+    Graph &G = m_dsa->getGraph(F);
+    auto git = globalCells.find(&G);
+    if (git == globalCells.end()) {
+      git = globalCells.try_emplace(&G).first;
+      for (auto &kv : G.globals()) {
+        git->second[kv.first] = kv.second.get();
+      }
+    }
+    const auto &globals = git->second;
+    TagOperandCells &cells = m_tag_operand_cells[&G];
+    auto addOperand = [&G, &globals, &cells](const Value *V, bool isWritten) {
+      if (!V->getType()->isPointerTy()) {
+        return;
+      }
+      const Value *S = V->stripPointerCasts();
+      const Cell *c = nullptr;
+      if (isa<GlobalValue>(S)) {
+        auto it = globals.find(S);
+        if (it != globals.end()) {
+          c = it->second;
+        }
+      } else if (G.hasCell(*S)) {
+        c = &G.getCell(*S);
+      }
+      if (!c || c->isNull()) {
+        return;
+      }
+      // Cell::getOffset is the canonical offset (the one getRegion uses)
+      cells.offsets[c->getNode()].push_back(c->getOffset());
+      if (isWritten) {
+        cells.written.insert(c->getNode());
+      }
+    };
+    for (const Instruction &I : instructions(F)) {
+      if (const MemTransferInst *MTI = dyn_cast<MemTransferInst>(&I)) {
+        addOperand(MTI->getRawDest(), true);
+        addOperand(MTI->getRawSource(), false);
+      } else if (const MemSetInst *MSI = dyn_cast<MemSetInst>(&I)) {
+        addOperand(MSI->getRawDest(), true);
+      } else if (const CallInst *CI = dyn_cast<CallInst>(&I)) {
+        StringRef name = getCrabIntrinsicSuffix(*CI);
+        if (name.empty()) {
+          continue;
+        }
+        // Only these intrinsics never write tags. move_tag(p1, p2) writes
+        // p2's tags from p1's; any other one is taken as a writer.
+        bool readsOnly = name == "check_does_not_have_tag" ||
+                         name == "check_has_tag" || name == "print_tags" ||
+                         name == "is_dereferenceable" ||
+                         name == "is_unfreed_or_null";
+        for (unsigned i = 0, e = CI->arg_size(); i < e; ++i) {
+          bool isWritten =
+              !readsOnly && !(name == "move_tag" && i == 0);
+          addOperand(CI->getArgOperand(i), isWritten);
+        }
+      }
+    }
+  }
+  for (auto &kv : m_tag_operand_cells) {
+    for (auto &nkv : kv.second.offsets) {
+      std::vector<unsigned> &v = nkv.second;
+      std::sort(v.begin(), v.end());
+      v.erase(std::unique(v.begin(), v.end()), v.end());
+    }
+  }
+}
+
+const TagOperandCells &
+SeaDsaHeapAbstractionImpl::getTagOperandCells(const Graph &G) const {
+  auto it = m_tag_operand_cells.find(&G);
+  return it != m_tag_operand_cells.end() ? it->second
+                                         : m_no_tag_operand_cells;
+}
+
+// A node enters the regions of a function if some access reads or
+// modifies it, if the function returns it, or (below) if it holds a
+// tag-operand cell: crab intrinsics are external calls, which sea-dsa
+// does not mark as reads or modifications, so a buffer that only
+// external calls and intrinsics touch is neither read nor modified.
+// Such a node gets no offset-0 region by default, only its tag-operand
+// cells. A node is modified if sea-dsa says so or if a tag-operand cell
+// of it may be written.
+static bool isNodeAccessed(const Node *n, bool isRetReach,
+                           const TagOperandCells &tagOperands) {
+  return isRetReach || n->isRead() || n->isModified() ||
+         tagOperands.offsets.count(n) > 0;
+}
+
+static bool isNodeModified(const Node *n, const TagOperandCells &tagOperands) {
+  return n->isModified() || tagOperands.written.count(n) > 0;
+}
+
+static std::vector<unsigned>
+extractAccessedFields(const Node *n, bool isRetReach,
+                      const TagOperandCells &tagOperands) {
+  bool onlyTagOperands = !isRetReach && !n->isRead() && !n->isModified();
+  return extractFields(n, tagOperands, !onlyTagOperands);
 }
 
 // compute and cache the set of read, mod and new reachable nodes from
@@ -266,15 +445,18 @@ void SeaDsaHeapAbstractionImpl::computeReadModNewNodes(
 
   HeapAbstraction::RegionVec reads, mods, news;
   std::vector<HeapAbstraction::RegionVec> equivClasses;
+  const TagOperandCells &tagOperands = getTagOperandCells(G);
   for (const Node *n : seadsa_heap_abs_impl::orderedNodes(reach)) {
     bool isRetReach = retReach.count(n) > 0;
 
-    if (!isRetReach && !n->isRead() && !n->isModified()) {
+    if (!isNodeAccessed(n, isRetReach, tagOperands)) {
       continue;
     }
+    bool isModified = isNodeModified(n, tagOperands);
 
     // Extract all fields from the node
-    std::vector<unsigned> fields = extractFields(n);
+    std::vector<unsigned> fields =
+        extractAccessedFields(n, isRetReach, tagOperands);
     // Create a region for each node's field
     for (auto field : fields) {
       Cell c(const_cast<Node *>(n), field);
@@ -287,7 +469,7 @@ void SeaDsaHeapAbstractionImpl::computeReadModNewNodes(
       if (!isRetReach) {
         // reachable from function arguments or globals
         reads.push_back(rgn);
-        if (n->isModified()) {
+        if (isModified) {
           mods.push_back(rgn);
         }
       } else {
@@ -351,13 +533,15 @@ void SeaDsaHeapAbstractionImpl::computeEquivClasses(const llvm::Function &f) {
     }
   }
 
+  const TagOperandCells &tagOperands = getTagOperandCells(G);
   for (const Node *n : seadsa_heap_abs_impl::orderedNodes(reach)) {
     bool isRetReach = retReach.count(n) > 0;
-    if (!isRetReach && !n->isRead() && !n->isModified()) {
+    if (!isNodeAccessed(n, isRetReach, tagOperands)) {
       continue;
     }
     HeapAbstraction::RegionVec nodeRgns;
-    std::vector<unsigned> fields = extractFields(n);
+    std::vector<unsigned> fields =
+        extractAccessedFields(n, isRetReach, tagOperands);
     for (auto field : fields) {
       Cell c(const_cast<Node *>(n), field);
       RegionInfo r_info =
@@ -434,15 +618,20 @@ void SeaDsaHeapAbstractionImpl::computeReadModNewNodesFromCallSite(
   Graph::computeCalleeCallerMapping(CS, calleeG, callerG, simMap);
 
   std::vector<std::pair<Region, bool>> reads, mods, news;
+  // the callee's nodes and fields, as computeReadModNewNodes(CalleeF)
+  // enumerates them
+  const TagOperandCells &tagOperands = getTagOperandCells(calleeG);
   for (const Node *n : seadsa_heap_abs_impl::orderedNodes(reach)) {
     bool isRetReach = retReach.count(n) > 0;
 
-    if (!isRetReach && !n->isRead() && !n->isModified()) {
+    if (!isNodeAccessed(n, isRetReach, tagOperands)) {
       continue;
     }
+    bool isModified = isNodeModified(n, tagOperands);
 
     // Extract all fields from the node
-    std::vector<unsigned> fields = extractFields(n);
+    std::vector<unsigned> fields =
+        extractAccessedFields(n, isRetReach, tagOperands);
 
     for (auto field : fields) {
       Cell calleeC(const_cast<Node *>(n), field);
@@ -466,7 +655,7 @@ void SeaDsaHeapAbstractionImpl::computeReadModNewNodesFromCallSite(
       Region rgn(mkRegion(callerC, callerRI));      
       if (!isRetReach) {
         reads.push_back({rgn, isConsistent});
-        if (n->isModified()) {
+        if (isModified) {
           mods.push_back({rgn, isConsistent});
         }
       } else {
@@ -524,6 +713,8 @@ void SeaDsaHeapAbstractionImpl::initialize(const llvm::Module &M) {
           llvm::errs() << "\n";
         }
       });
+
+  computeTagOperandCells(M);
 
   callsite_map_t CSAccessed, CSMods, CSNews;
   // For the sanity check implemented below
